@@ -29,6 +29,7 @@ private slots:
     void onResetAllRequested();
     void onSettingsRequested();
     void onAboutRequested();
+    void onQuitRequested();
 
 private:
     AppCore() = default;

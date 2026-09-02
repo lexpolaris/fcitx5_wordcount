@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QTimer>
 #include "app_core.h"
 
 int main(int argc, char *argv[])
@@ -8,20 +9,26 @@ int main(int argc, char *argv[])
     app.setOrganizationName("Fcitx5WordCount");
     app.setQuitOnLastWindowClosed(false);
 
-    // 初始化核心
     AppCore& core = AppCore::instance();
-
-    // 初始化，如果返回 false 说明已有实例在运行
+    
     if (!core.init()) {
-        // 已有实例，向用户提示（可选）
-        // 静默退出，不弹出窗口（避免打扰）
         return 0;
     }
 
-    // 退出
+    // 使用 aboutToQuit 而不是 applicationStateChanged
     QObject::connect(&app, &QApplication::aboutToQuit, [&]() {
+        qDebug() << "aboutToQuit 信号触发";
         core.shutdown();
     });
 
-    return app.exec();
+    // 优雅退出处理
+    QObject::connect(&app, &QApplication::lastWindowClosed, [&]() {
+        // 如果所有窗口都关闭了（托盘还在），不退出
+        // 但如果有窗口被关闭，不做特殊处理
+    });
+
+    int result = app.exec();
+    
+    qDebug() << "应用程序退出，返回值:" << result;
+    return result;
 }

@@ -25,7 +25,17 @@ Fcitx5Monitor::Fcitx5Monitor(QObject *parent)
 
 Fcitx5Monitor::~Fcitx5Monitor()
 {
-    stop();
+    // 析构时只做清理，不重复调用 stop
+    if (m_process) {
+        // 直接清理，不通过 stop() 避免重复日志
+        if (m_process->state() == QProcess::Running) {
+            m_process->terminate();
+            m_process->waitForFinished(300);
+        }
+        delete m_process;
+        m_process = nullptr;
+    }
+    m_active = false;
 }
 
 bool Fcitx5Monitor::start()
@@ -135,22 +145,36 @@ void Fcitx5Monitor::tryFallbackMode()
 
 void Fcitx5Monitor::stop()
 {
-    if (m_stopping) return;          // 重入守卫
+    if (m_stopping) return;
+    if (!m_active && !m_process) {
+        // 已经停止，直接返回
+        return;
+    }
+    
     m_stopping = true;
+    qDebug() << "Fcitx5Monitor::stop() 开始";
+
     if (m_process) {
         QProcess *proc = m_process;
-        // 断开本对象到该进程的全部信号连接（kill 后残留输出不再进槽，防空指针）
         disconnect(proc, nullptr, this, nullptr);
-        // 异步清理：进程结束后 deleteLater 自行释放，
-        // 不用 waitForFinished 阻塞 GUI 线程（R-1）
-        connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-                proc, &QObject::deleteLater);
-        proc->kill();
+        
+        if (proc->state() == QProcess::Running) {
+            qDebug() << "终止 dbus-monitor 子进程...";
+            proc->terminate();
+            if (!proc->waitForFinished(500)) {
+                qDebug() << "dbus-monitor 未响应，强制 kill";
+                proc->kill();
+                proc->waitForFinished(300);
+            }
+        }
+        
+        proc->deleteLater();
         m_process = nullptr;
     }
+
     m_active = false;
     m_stopping = false;
-    qDebug() << "fcitx5 监听已停止";
+    qDebug() << "Fcitx5Monitor::stop() 完成";
 }
 
 void Fcitx5Monitor::onProcessOutput()

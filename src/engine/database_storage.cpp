@@ -50,7 +50,10 @@ bool DatabaseStorage::open()
 {
     if (m_db.isOpen()) return true;
 
-    m_db = QSqlDatabase::addDatabase("QSQLITE", "wordcount_conn");
+    // 使用唯一的连接名，避免与其他地方冲突
+    QString connName = QString("wordcount_conn_%1").arg(reinterpret_cast<quintptr>(this));
+    
+    m_db = QSqlDatabase::addDatabase("QSQLITE", connName);
     m_db.setDatabaseName(m_dbPath);
     if (!m_db.open()) {
         qWarning() << "打开数据库失败:" << m_db.lastError().text();
@@ -73,11 +76,25 @@ bool DatabaseStorage::open()
 
 void DatabaseStorage::close()
 {
+    QMutexLocker locker(&m_mutex);
+
     if (m_db.isOpen()) {
+        qDebug() << "关闭数据库连接...";
         m_db.close();
     }
-    // 移除连接
-    QSqlDatabase::removeDatabase("wordcount_conn");
+
+    // 移除连接前，确保所有查询对象都已销毁
+    // 使用连接名移除
+    QString connName = m_db.connectionName();
+    if (!connName.isEmpty()) {
+        // 先让 QSqlDatabase 对象无效
+        m_db = QSqlDatabase();
+        // 然后移除连接
+        QSqlDatabase::removeDatabase(connName);
+        qDebug() << "数据库连接已移除:" << connName;
+    }
+
+    m_initialized = false;
 }
 
 bool DatabaseStorage::createTables()

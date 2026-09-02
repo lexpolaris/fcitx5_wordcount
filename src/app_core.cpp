@@ -107,7 +107,7 @@ bool AppCore::init()
     connect(m_trayManager, &TrayIconManager::aboutRequested,
             this, &AppCore::onAboutRequested);
     connect(m_trayManager, &TrayIconManager::quitRequested,
-            qApp, &QApplication::quit);
+            this, &AppCore::onQuitRequested);
 
     m_trayManager->init();
 
@@ -160,10 +160,60 @@ void AppCore::onAboutRequested()
 
 void AppCore::shutdown()
 {
-    if (m_engine) m_engine->flushToDatabase();
-    if (m_monitor) m_monitor->stop();
+    qDebug() << "AppCore::shutdown() 开始";
+
+    // 1. 先断开信号，防止在清理过程中触发新的操作
+    if (m_monitor) {
+        disconnect(m_monitor, nullptr, this, nullptr);
+    }
+    if (m_engine) {
+        disconnect(m_engine, nullptr, this, nullptr);
+    }
+
+    // 2. 停止输入法监听
+    if (m_monitor) {
+        qDebug() << "停止输入法监听...";
+        m_monitor->stop();
+        // stop() 已经等待子进程退出，不再需要额外等待
+        m_monitor->deleteLater();
+        m_monitor = nullptr;
+    }
+
+    // 3. 刷新数据到数据库
+    if (m_engine) {
+        qDebug() << "刷新数据到数据库...";
+        m_engine->flushToDatabase();
+        m_engine->deleteLater();
+        m_engine = nullptr;
+    }
+
+    // 4. 托盘图标
+    if (m_trayManager) {
+        qDebug() << "隐藏托盘图标...";
+        m_trayManager->deleteLater();
+        m_trayManager = nullptr;
+    }
+
+    // 5. 数据库
+    if (m_db) {
+        qDebug() << "关闭数据库...";
+        m_db->close();
+        m_db->deleteLater();
+        m_db = nullptr;
+    }
+
+    // 6. 配置
     ConfigManager::instance().sync();
 
-    // 释放单例锁
+    // 7. 共享内存
     releaseSingleInstance();
+
+    qDebug() << "AppCore::shutdown() 完成";
+}
+
+void AppCore::onQuitRequested()
+{
+    qDebug() << "收到退出请求";
+    // 使用 QTimer::singleShot 避免在信号处理中直接删除
+    QTimer::singleShot(0, qApp, &QApplication::quit);
 }
