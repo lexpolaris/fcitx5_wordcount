@@ -1,3 +1,8 @@
+// src/ui/detail_panel.h
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// 详情面板 — 悬浮显示今日字数、段位进度、速度、趋势
+// 自管理：订阅 StatisticsEngine 数据更新，自行控制显示/隐藏
+
 #pragma once
 
 #include <QWidget>
@@ -6,6 +11,11 @@
 #include <QJsonArray>
 #include <QFont>
 #include <QFontMetrics>
+#include <QPointer>
+
+namespace wordcount {
+    class StatisticsEngine;
+}
 
 namespace wordcount {
 
@@ -13,16 +23,37 @@ namespace wordcount {
     {
         Q_OBJECT
     public:
-        explicit DetailPanel(QWidget *parent = nullptr);
+        /// 构造时传入引擎指针，面板自动订阅数据更新
+        /// \param engine 统计引擎，不能为 nullptr
+        explicit DetailPanel(StatisticsEngine* engine, QWidget *parent = nullptr);
+        ~DetailPanel() override;
 
-        void refresh(qint64 total, qint64 today, double wpm,
-                     const QJsonArray &hourly, const QJsonArray &daily7);
+        // ========== 面板管理（静态方法，无需持有实例指针） ==========
+        /// 获取单例实例（可能为 nullptr）
+        static DetailPanel* instance();
+
+        /// 在鼠标位置附近显示面板（自动计算位置防止超出屏幕）
+        static void showPanel();
+
+        /// 切换面板显示状态
+        static void togglePanel();
+
+        /// 隐藏面板
+        static void hidePanel();
+
+        /// 检查面板是否可见
+        static bool isVisible();
 
     protected:
         void paintEvent(QPaintEvent *event) override;
         void showEvent(QShowEvent *event) override;
 
+    private slots:
+        /// 引擎数据变化时自动更新
+        void onStatsChanged(qint64 total, qint64 today, double wpm);
+
     private:
+        void updateData();
         void drawHero(QPainter &p, const QRect &area);
         void drawNumberCards(QPainter &p, const QRect &area);
         void drawHourlyHeatmap(QPainter &p, const QRect &area);
@@ -42,7 +73,10 @@ namespace wordcount {
         QColor heatColor() const;
         QColor adjustedTierColor() const;
 
-        // 数据
+        // ---- 数据成员 ----
+        StatisticsEngine* m_engine = nullptr;
+
+        // 缓存数据
         qint64 m_total = 0;
         qint64 m_today = 0;
         double m_wpm = 0.0;
@@ -65,7 +99,7 @@ namespace wordcount {
         QColor m_badgeColor;
         QString m_daily7Delta;
 
-        // 非段位模式缓存（保留扩展）
+        // 扩展保留
         QString m_rhythmTitle;
         QString m_rhythmSubtitle;
         double m_rhythmProgress = 0.0;
@@ -86,9 +120,9 @@ namespace wordcount {
         QFontMetrics m_fmT8{m_fontT8};
         QFontMetrics m_fmT10{m_fontT10};
 
-        // 面板尺寸（外部可见）
+        static QPointer<DetailPanel> s_instance;
         static constexpr int kPanelWidth = 280;
-        static constexpr int kPanelHeight = 440;   // 增高至 440
+        static constexpr int kPanelHeight = 440;
     };
 
 } // namespace wordcount

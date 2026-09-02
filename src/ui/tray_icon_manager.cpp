@@ -1,3 +1,7 @@
+// src/ui/tray_icon_manager.cpp
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// 托盘图标管理实现
+
 #include "tray_icon_manager.h"
 #include "engine/statistics_engine.h"
 #include "core/level_system.h"
@@ -17,21 +21,27 @@
 #include <QFileDialog>
 #include <QTimer>
 
-
 TrayIconManager::TrayIconManager(wordcount::StatisticsEngine* engine, QObject* parent)
-: QObject(parent), m_engine(engine)
+    : QObject(parent)
+    , m_engine(engine)
 {
-    // 连接主题变化信号
+    // 主题变化时刷新图标
     connect(&wordcount::ThemeHelper::instance(),
             &wordcount::ThemeHelper::themeChanged,
             this, &TrayIconManager::updateIcon);
 
-    // 连接配置变化信号
+    // 配置变化时切换显示模式
     connect(&ConfigManager::instance(), &ConfigManager::trayDisplayModeChanged,
             this, [this](int mode) {
                 m_mode = static_cast<DisplayMode>(mode);
                 updateIcon();
             });
+
+    // 引擎数据变化时自动刷新图标
+    if (m_engine) {
+        connect(m_engine, &wordcount::StatisticsEngine::statsChanged,
+                this, &TrayIconManager::updateIcon);
+    }
 }
 
 void TrayIconManager::init()
@@ -41,7 +51,6 @@ void TrayIconManager::init()
         return;
     }
 
-    // 从配置管理器加载显示模式
     m_mode = static_cast<DisplayMode>(ConfigManager::instance().trayDisplayMode());
 
     m_trayIcon = new QSystemTrayIcon(this);
@@ -54,16 +63,14 @@ void TrayIconManager::init()
     connect(m_trayIcon, &QSystemTrayIcon::activated,
             this, &TrayIconManager::onActivated);
 
+    // 首次刷新
     updateIcon();
 }
 
 void TrayIconManager::updateIcon()
 {
     if (!m_trayIcon) {
-        if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-            qWarning() << "系统托盘不可用";
-            return;
-        }
+        if (!QSystemTrayIcon::isSystemTrayAvailable()) return;
         m_trayIcon = new QSystemTrayIcon(this);
         m_trayIcon->show();
         setupContextMenu();
@@ -76,8 +83,8 @@ void TrayIconManager::updateIcon()
 
     if (m_engine) {
         QString tip = tr("今日: %1 字\n总计: %2 字")
-        .arg(m_engine->todayChars())
-        .arg(m_engine->totalChars());
+            .arg(m_engine->todayChars())
+            .arg(m_engine->totalChars());
         m_trayIcon->setToolTip(tip);
     }
 }

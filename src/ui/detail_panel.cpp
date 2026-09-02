@@ -1,4 +1,9 @@
+// src/ui/detail_panel.cpp
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// 详情面板实现 — 自管理数据订阅和显示
+
 #include "detail_panel.h"
+#include "engine/statistics_engine.h"
 #include "core/level_system.h"
 #include "core/word_equivalence.h"
 #include "theme_helper.h"
@@ -12,28 +17,76 @@
 #include <QDate>
 #include <QLinearGradient>
 #include <QGuiApplication>
-#include <QPalette>
+#include <QScreen>
+#include <QCursor>
 #include <cmath>
 
 namespace wordcount {
 
-    // ---------- 内部布局常量 ----------
-    namespace {
-        constexpr int kHeroHeight = 100;
-        constexpr int kCardsHeight = 82;
-        constexpr int kDaily7Height = 104;
-        constexpr int kHourlyHeight = 78;
-        constexpr int kEquivalenceHeight = 56;
-        constexpr double kPi = 3.14159265358979323846;
+    // ========== 静态实例管理 ==========
+    QPointer<DetailPanel> DetailPanel::s_instance;
 
-        QColor adjustedColor(const QColor &c, bool dark) {
-            return dark ? c.lighter(140) : c.lighter(108);
+    DetailPanel* DetailPanel::instance()
+    {
+        return s_instance;
+    }
+
+    bool DetailPanel::isVisible()
+    {
+        return s_instance && s_instance->QWidget::isVisible();
+    }
+
+    void DetailPanel::showPanel()
+    {
+        if (!s_instance) return;
+
+        // 计算鼠标位置附近的位置
+        QPoint cursorPos = QCursor::pos();
+        QScreen* screen = QGuiApplication::screenAt(cursorPos);
+        if (!screen) screen = QGuiApplication::primaryScreen();
+        if (!screen) {
+            s_instance->move(100, 100);
+            s_instance->show();
+            return;
+        }
+
+        QRect screenRect = screen->availableGeometry();
+        int panelW = s_instance->width();
+        int panelH = s_instance->height();
+
+        QPoint pos = cursorPos + QPoint(10, 10);
+        if (pos.x() + panelW > screenRect.right())
+            pos.setX(screenRect.right() - panelW);
+        if (pos.y() + panelH > screenRect.bottom())
+            pos.setY(screenRect.bottom() - panelH);
+        if (pos.x() < screenRect.left()) pos.setX(screenRect.left());
+        if (pos.y() < screenRect.top()) pos.setY(screenRect.top());
+
+        s_instance->move(pos);
+        s_instance->show();
+        s_instance->raise();
+        s_instance->activateWindow();
+    }
+
+    void DetailPanel::togglePanel()
+    {
+        if (!s_instance) return;
+        if (s_instance->isVisible()) {
+            s_instance->hide();
+        } else {
+            showPanel();
         }
     }
 
-    // ---------- 构造 ----------
-    DetailPanel::DetailPanel(QWidget *parent)
-    : QWidget(parent)
+    void DetailPanel::hidePanel()
+    {
+        if (s_instance) s_instance->hide();
+    }
+
+    // ========== 构造 / 析构 ==========
+    DetailPanel::DetailPanel(StatisticsEngine* engine, QWidget *parent)
+        : QWidget(parent)
+        , m_engine(engine)
     {
         setFixedSize(kPanelWidth, kPanelHeight);
         setAttribute(Qt::WA_TranslucentBackground, true);
@@ -44,7 +97,7 @@ namespace wordcount {
         qreal dpr = devicePixelRatioF();
         int basePointSize = 10;
 
-        // 使用点大小（Point Size）替代像素大小，自动适配 DPI
+        // 使用点大小自动适配 DPI
         m_fontToday   = QFont("", basePointSize + 4, QFont::Bold);   // 14pt
         m_fontT4      = QFont("", basePointSize + 2, QFont::Bold);   // 12pt
         m_fontT5      = QFont("", basePointSize + 1, QFont::Bold);   // 11pt
@@ -52,7 +105,6 @@ namespace wordcount {
         m_fontT8      = QFont("", basePointSize - 2);                // 8pt
         m_fontT10     = QFont("", basePointSize - 3);                // 7pt
 
-        // 设置字体策略为优先使用点大小
         m_fontToday.setStyleStrategy(QFont::PreferMatch);
         m_fontT4.setStyleStrategy(QFont::PreferMatch);
         m_fontT5.setStyleStrategy(QFont::PreferMatch);
@@ -60,7 +112,6 @@ namespace wordcount {
         m_fontT8.setStyleStrategy(QFont::PreferMatch);
         m_fontT10.setStyleStrategy(QFont::PreferMatch);
 
-        // 重新创建 QFontMetrics
         m_fmToday = QFontMetrics(m_fontToday);
         m_fmT4 = QFontMetrics(m_fontT4);
         m_fmT5 = QFontMetrics(m_fontT5);
@@ -68,75 +119,59 @@ namespace wordcount {
         m_fmT8 = QFontMetrics(m_fontT8);
         m_fmT10 = QFontMetrics(m_fontT10);
 
+        // ★ 订阅引擎数据更新
+        if (m_engine) {
+            connect(m_engine, &StatisticsEngine::statsChanged,
+                    this, &DetailPanel::onStatsChanged);
+            // 首次加载数据
+            updateData();
+        }
+
+        // 主题变化时刷新
         connect(&ThemeHelper::instance(), &ThemeHelper::themeChanged,
                 this, QOverload<>::of(&QWidget::update));
+
+        // 注册单例
+        s_instance = this;
     }
 
-    // ---------- 主题颜色辅助 ----------
-    bool DetailPanel::isDarkTheme() const
+    DetailPanel::~DetailPanel()
     {
-        return wordcount::ThemeHelper::isDarkTheme();
+        if (s_instance == this) {
+            s_instance = nullptr;
+        }
     }
 
-    QColor DetailPanel::textColor() const
-    {
-        return wordcount::ThemeHelper::textColor();
-    }
-
-    QColor DetailPanel::subTextColor() const
-    {
-        return wordcount::ThemeHelper::subTextColor();
-    }
-
-    QColor DetailPanel::bgColor() const
-    {
-        return wordcount::ThemeHelper::bgColor();
-    }
-
-    QColor DetailPanel::cardBgColor() const
-    {
-        return wordcount::ThemeHelper::cardBgColor();
-    }
-
-    QColor DetailPanel::separatorColor() const
-    {
-        return wordcount::ThemeHelper::separatorColor();
-    }
-
-    QColor DetailPanel::accentColor() const
-    {
-        // 品牌色/强调色 - 翠绿
-        return QColor(0x00, 0xA4, 0x8A);
-    }
-
-    QColor DetailPanel::heatColor() const
-    {
-        // 热力图颜色使用品牌色
-        return accentColor();
-    }
-
-    QColor DetailPanel::adjustedTierColor() const
-    {
-        return wordcount::ThemeHelper::adjustedColor(m_tierColor);
-    }
-
-    // ---------- showEvent ----------
+    // ========== 数据显示事件 ==========
     void DetailPanel::showEvent(QShowEvent *event)
     {
         QWidget::showEvent(event);
+        // 显示时确保数据最新
+        if (m_engine) updateData();
     }
 
-    // ---------- 刷新数据 ----------
-    void DetailPanel::refresh(qint64 total, qint64 today, double wpm,
-                              const QJsonArray &hourly, const QJsonArray &daily7)
+    // ========== 数据更新 ==========
+    void DetailPanel::onStatsChanged(qint64 total, qint64 today, double wpm)
     {
-        m_total = total;
-        m_today = today;
-        m_wpm = wpm;
-        m_hourly = hourly;
-        m_daily7 = daily7;
+        Q_UNUSED(total);
+        Q_UNUSED(today);
+        Q_UNUSED(wpm);
+        updateData();
+        if (isVisible()) update();
+    }
 
-        LevelInfo lv = LevelSystem::levelForTotal(total);
+    void DetailPanel::updateData()
+    {
+        if (!m_engine) return;
+
+        m_total = m_engine->totalChars();
+        m_today = m_engine->todayChars();
+        m_wpm = m_engine->currentWpm();
+        m_hourly = m_engine->hourlyToday();
+        m_daily7 = m_engine->daily7();
+
+        // ---- 等级信息 ----
+        LevelInfo lv = LevelSystem::levelForTotal(m_total);
         m_tierName = lv.tierName;
         m_tierRank = lv.tierRank;
         m_tierColor = lv.tierColor;
@@ -153,20 +188,22 @@ namespace wordcount {
             m_tierSubtitle = QString::fromUtf8(LevelSystem::tierAt(lv.tierIndex).fullName);
             const QString nextRank = QString::fromUtf8(
                 LevelSystem::rankName(lv.levelInTier + 1));
-            const qint64 remain = qMax<qint64>(0, lv.nextMin - total);
+            const qint64 remain = qMax<qint64>(0, lv.nextMin - m_total);
             m_progressLine = QStringLiteral("%1% · 距%2还差%3字")
-            .arg(static_cast<int>(m_levelProgress * 100))
-            .arg(nextRank)
-            .arg(formatNumber(remain));
+                .arg(static_cast<int>(m_levelProgress * 100))
+                .arg(nextRank)
+                .arg(formatNumber(remain));
         }
 
+        // ---- 卡片数据 ----
         m_cardToday = formatNumber(m_today);
         m_cardSpeed = QStringLiteral("%1 字/分").arg(static_cast<int>(m_wpm));
         m_cardTotal = formatNumber(m_total);
 
+        // ---- 徽章（与昨日对比） ----
         qint64 yesterday = 0;
-        if (daily7.size() >= 6) {
-            yesterday = daily7.at(5).toVariant().toLongLong();
+        if (m_daily7.size() >= 6) {
+            yesterday = m_daily7.at(5).toVariant().toLongLong();
         }
         const qint64 diff = m_today - yesterday;
         if (yesterday <= 0 && diff <= 0) {
@@ -180,52 +217,56 @@ namespace wordcount {
             m_badgeColor = QColor(QStringLiteral("#E64545"));
         }
 
+        // ---- 7日趋势 ----
         qint64 base = 0, last = 0;
-        if (daily7.size() >= 7) {
-            base = daily7.at(0).toVariant().toLongLong();
-            last = daily7.at(6).toVariant().toLongLong();
+        if (m_daily7.size() >= 7) {
+            base = m_daily7.at(0).toVariant().toLongLong();
+            last = m_daily7.at(6).toVariant().toLongLong();
         }
         if (base <= 0) {
             m_daily7Delta = last > 0 ? QStringLiteral("▲ 今日 %1 字").arg(formatNumber(last))
-            : QStringLiteral("暂无数据");
+                                     : QStringLiteral("暂无数据");
         } else {
             const int rawPct = static_cast<int>(static_cast<double>(last - base) / base * 100);
             const int pct = qBound(-999, rawPct, 999);
             m_daily7Delta = pct >= 0 ? QStringLiteral("▲ %1%").arg(pct)
-            : QStringLiteral("▼ %1%").arg(-pct);
+                                     : QStringLiteral("▼ %1%").arg(-pct);
         }
 
+        // 清空扩展字段
         m_peakLine.clear();
         m_peakIsNewRecord = false;
         m_rhythmTitle.clear();
         m_rhythmSubtitle.clear();
         m_rhythmProgress = 0.0;
-
-        update();
     }
 
-    // ---------- paintEvent ----------
+    // ========== 绘制 ==========
     void DetailPanel::paintEvent(QPaintEvent *event)
     {
         Q_UNUSED(event);
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
 
+        // 背景
         p.setPen(Qt::NoPen);
         p.setBrush(bgColor());
         p.drawRoundedRect(rect(), 12, 12);
 
+        // 边框
         p.setPen(QPen(separatorColor(), 1));
         p.setBrush(Qt::NoBrush);
         p.drawRoundedRect(rect().adjusted(1, 1, -1, -1), 12, 12);
 
+        // 各区域
         int y = 0;
-        QRect heroArea(0, y, kPanelWidth, kHeroHeight); y += kHeroHeight;
-        QRect cardsArea(0, y, kPanelWidth, kCardsHeight); y += kCardsHeight;
-        QRect daily7Area(0, y, kPanelWidth, kDaily7Height); y += kDaily7Height;
-        QRect hourlyArea(0, y, kPanelWidth, kHourlyHeight); y += kHourlyHeight;
-        QRect equivalenceArea(0, y, kPanelWidth, kEquivalenceHeight);
+        QRect heroArea(0, y, kPanelWidth, 100); y += 100;
+        QRect cardsArea(0, y, kPanelWidth, 82); y += 82;
+        QRect daily7Area(0, y, kPanelWidth, 104); y += 104;
+        QRect hourlyArea(0, y, kPanelWidth, 78); y += 78;
+        QRect equivalenceArea(0, y, kPanelWidth, 56);
 
+        // 分隔线
         p.setPen(QPen(separatorColor(), 1));
         p.drawLine(0, heroArea.bottom(), kPanelWidth, heroArea.bottom());
 
@@ -236,15 +277,16 @@ namespace wordcount {
         drawEquivalence(p, equivalenceArea);
     }
 
-    // ---------- ★ Hero 区绘制 ----------
+    // ========== 绘制各区域（与原来完全相同，只是从成员变量读取数据） ==========
+
     void DetailPanel::drawHero(QPainter &p, const QRect &area)
     {
-        // ---- 右侧今日数据区域（垂直布局） ----
+        // 右侧今日数据
         const int rightW = 110;
         const int rightX = area.x() + area.width() - 16 - rightW;
         const QRect rightRect(rightX, area.y() + 8, rightW, area.height() - 16);
 
-        // 第一行：“今日”标签（顶部）
+        // 第一行："今日"标签
         const int row1Y = rightRect.y();
         const int row1H = 16;
         p.setFont(m_fontT10);
@@ -252,36 +294,21 @@ namespace wordcount {
         p.drawText(QRect(rightRect.x(), row1Y, rightRect.width(), row1H),
                    Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("今日已输入"));
 
-        // 第二行：今日数字（居中，大字体）
+        // 第二行：今日数字
         const int row2Y = row1Y + row1H + 2;
         const int row2H = 30;
-        QFont numFont = m_fontToday;
-        int numWidth = QFontMetrics(numFont).horizontalAdvance(m_cardToday);
-        // if (numWidth > rightRect.width()) {
-        //     numFont = QFont("", 16, QFont::Bold);
-        //     numWidth = QFontMetrics(numFont).horizontalAdvance(m_cardToday);
-        // }
-        p.setFont(numFont);
+        p.setFont(m_fontToday);
         p.setPen(textColor());
         p.drawText(QRect(rightRect.x(), row2Y, rightRect.width(), row2H),
                    Qt::AlignRight | Qt::AlignVCenter, m_cardToday);
 
-        // // 第三行：差值徽章（底部）
-        // const int row3Y = row2Y + row2H + 2;
-        // const int row3H = 18;
-        // p.setFont(m_fontT10);
-        // p.setPen(m_badgeColor);
-        // p.drawText(QRect(rightRect.x(), row3Y, rightRect.width(), row3H),
-        //            Qt::AlignRight | Qt::AlignVCenter, m_badgeText);
-
-        // ---- 左侧等级信息  ----
+        // 左侧等级信息
         const int leftW = rightX - area.x() - 24;
 
         p.setFont(m_fontT4);
         p.setPen(adjustedTierColor());
         const QString tierLine = m_fmT4.horizontalAdvance(m_tierLine) > leftW ?
-        m_fmT4.elidedText(m_tierLine, Qt::ElideRight, leftW) :
-        m_tierLine;
+            m_fmT4.elidedText(m_tierLine, Qt::ElideRight, leftW) : m_tierLine;
         p.drawText(QRect(area.x() + 16, area.y() + 12, leftW, 26),
                    Qt::AlignLeft | Qt::AlignVCenter, tierLine);
 
@@ -290,7 +317,7 @@ namespace wordcount {
         p.drawText(QRect(area.x() + 16, area.y() + 36, leftW, 16),
                    Qt::AlignLeft | Qt::AlignVCenter, m_tierSubtitle);
 
-        // ---- 进度条 ----
+        // 进度条
         const int barX = area.x() + 16;
         const int barY = area.y() + area.height() - 34;
         const int barH = 8;
@@ -309,12 +336,10 @@ namespace wordcount {
             p.drawRoundedRect(filledRect, barH/2, barH/2);
         }
 
-        // 进度文案（在进度条下方）
         p.setFont(m_fontT8);
         p.setPen(subTextColor());
         const QString progressLine = m_fmT8.horizontalAdvance(m_progressLine) > barW ?
-        m_fmT8.elidedText(m_progressLine, Qt::ElideRight, barW) :
-        m_progressLine;
+            m_fmT8.elidedText(m_progressLine, Qt::ElideRight, barW) : m_progressLine;
         p.drawText(QRect(barX, barY + barH + 4, barW, 14),
                    Qt::AlignLeft | Qt::AlignVCenter, progressLine);
     }
@@ -503,7 +528,53 @@ namespace wordcount {
                    Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap, text);
     }
 
-    // ---------- 工具函数 ----------
+    // ========== 颜色辅助 ==========
+    bool DetailPanel::isDarkTheme() const
+    {
+        return ThemeHelper::isDarkTheme();
+    }
+
+    QColor DetailPanel::textColor() const
+    {
+        return ThemeHelper::textColor();
+    }
+
+    QColor DetailPanel::subTextColor() const
+    {
+        return ThemeHelper::subTextColor();
+    }
+
+    QColor DetailPanel::bgColor() const
+    {
+        return ThemeHelper::bgColor();
+    }
+
+    QColor DetailPanel::cardBgColor() const
+    {
+        return ThemeHelper::cardBgColor();
+    }
+
+    QColor DetailPanel::separatorColor() const
+    {
+        return ThemeHelper::separatorColor();
+    }
+
+    QColor DetailPanel::accentColor() const
+    {
+        return QColor(0x00, 0xA4, 0x8A);
+    }
+
+    QColor DetailPanel::heatColor() const
+    {
+        return accentColor();
+    }
+
+    QColor DetailPanel::adjustedTierColor() const
+    {
+        return ThemeHelper::adjustedColor(m_tierColor);
+    }
+
+    // ========== 工具函数 ==========
     QString DetailPanel::formatNumber(qint64 n)
     {
         QString s = QString::number(n);
