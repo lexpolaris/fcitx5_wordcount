@@ -5,10 +5,10 @@
 #include "app_core.h"
 
 #include "core/fcitx5_monitor.h"
-#include "ui/detail_panel.h"
-#include "ui/insight_panel.h"
 #include "engine/statistics_engine.h"
 #include "engine/database_storage.h"
+#include "ui/detail_panel.h"
+#include "ui/insight_panel.h"
 #include "ui/tray_icon_manager.h"
 #include "ui/settings_dialog.h"
 #include "ui/theme_helper.h"
@@ -18,6 +18,8 @@
 #include <QStandardPaths>
 #include <QDir>
 #include <QMessageBox>
+#include <QDebug>
+
 
 AppCore& AppCore::instance()
 {
@@ -25,8 +27,45 @@ AppCore& AppCore::instance()
     return core;
 }
 
-void AppCore::init()
+bool AppCore::acquireSingleInstance()
 {
+    // 尝试创建共享内存，如果已存在则说明已有实例在运行
+    m_sharedMem.setKey(QString::fromUtf8(kSharedMemKey));
+    
+    if (m_sharedMem.attach()) {
+        // 共享内存已存在，说明已有实例
+        qWarning() << "已有程序实例在运行，退出";
+        return false;
+    }
+
+    // 创建共享内存（至少1字节）
+    if (!m_sharedMem.create(1)) {
+        // 创建失败，可能权限问题，尝试附加已有
+        if (m_sharedMem.attach()) {
+            qWarning() << "已有程序实例在运行，退出";
+            return false;
+        }
+        // 实在无法创建，继续运行但记录警告
+        qWarning() << "无法创建共享内存，但继续运行（可能无法防止多实例）";
+    }
+
+    return true;
+}
+
+void AppCore::releaseSingleInstance()
+{
+    if (m_sharedMem.isAttached()) {
+        m_sharedMem.detach();
+    }
+}
+
+bool AppCore::init()
+{
+    // 单例检测（必须最先执行）
+    if (!acquireSingleInstance()) {
+        return false;
+    }
+
     auto& config = ConfigManager::instance();
 
     // 1. 数据库
@@ -88,6 +127,8 @@ void AppCore::init()
 
     // 9. 加载数据（触发首次 statsChanged）
     m_engine->load();
+
+    return true;
 }
 
 void AppCore::onResetAllRequested()
@@ -122,4 +163,7 @@ void AppCore::shutdown()
     if (m_engine) m_engine->flushToDatabase();
     if (m_monitor) m_monitor->stop();
     ConfigManager::instance().sync();
+
+    // 释放单例锁
+    releaseSingleInstance();
 }

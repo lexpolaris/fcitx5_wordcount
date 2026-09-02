@@ -10,7 +10,13 @@ int main(int argc, char *argv[])
 
     // 初始化核心
     AppCore& core = AppCore::instance();
-    core.init();
+
+    // 初始化，如果返回 false 说明已有实例在运行
+    if (!core.init()) {
+        // 已有实例，向用户提示（可选）
+        // 静默退出，不弹出窗口（避免打扰）
+        return 0;
+    }
 
     // 退出
     QObject::connect(&app, &QApplication::aboutToQuit, [&]() {

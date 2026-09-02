@@ -34,7 +34,7 @@ public:
     static constexpr int kMaxCommitLength = 65536;
 
     /// 子进程异常退出后的最大自动重启次数（防御无限重启循环）
-    static constexpr int kMaxRestartCount = 5;
+    static constexpr int kMaxRestartCount = 3; 
 
     /// 子进程持续存活该时长后才认为"稳定"，允许清零重启计数；
     /// 防止"能启动但立即退出"（如 BecomeMonitor 被拒）场景下
@@ -58,12 +58,18 @@ signals:
     /// \param text 上屏文本（明文，接收方应只统计字数，不存储原文）
     void textCommitted(const QString &text);
 
+    // 监听器彻底失败（BecomeMonitor 被拒等）
+    void monitorFailed();  
+
 private slots:
     /// dbus-monitor stdout 有数据
     void onProcessOutput();
 
     /// dbus-monitor stderr 有数据（检查 BecomeMonitor 失败告警）
     void onProcessErrorOutput();
+
+    /// 子进程启动成功回调
+    void onProcessStarted();  
 
     /// 子进程异常退出
     void onProcessError();
@@ -72,6 +78,10 @@ private:
     /// 解析 dbus-monitor 输出行，提取 CommitString 文本
     /// \param line 当前行
     void parseLine(const QString &line);
+
+    // 尝试备用模式
+    void tryFallbackMode();   
+
 
     bool m_active = false;
 
@@ -102,6 +112,12 @@ private:
 
     /// 子进程异常退出后的累计重启次数
     int m_restartCount = 0;
+
+    /// 是否已进入降级模式（不再尝试重启）
+    bool m_fallbackMode = false;
+
+    /// 上次启动尝试的时间戳（用于冷却）
+    qint64 m_lastStartAttemptMs = 0;
 };
 
 } // namespace wordcount

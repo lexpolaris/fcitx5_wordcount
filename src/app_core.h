@@ -5,6 +5,7 @@
 #pragma once
 
 #include <QObject>
+#include <QSharedMemory>
 
 namespace wordcount {
     class Fcitx5Monitor;
@@ -21,7 +22,7 @@ class AppCore : public QObject
 public:
     static AppCore& instance();
 
-    void init();
+    bool init();
     void shutdown();
 
 private slots:
@@ -35,8 +36,14 @@ private:
     AppCore(const AppCore&) = delete;
     AppCore& operator=(const AppCore&) = delete;
 
+    bool acquireSingleInstance();
+    void releaseSingleInstance();
+
     wordcount::DatabaseStorage* m_db = nullptr;
     wordcount::StatisticsEngine* m_engine = nullptr;
     wordcount::Fcitx5Monitor* m_monitor = nullptr;
     TrayIconManager* m_trayManager = nullptr;
+
+    QSharedMemory m_sharedMem;
+    static constexpr const char* kSharedMemKey = "Fcitx5WordCount_SingleInstance";
 };

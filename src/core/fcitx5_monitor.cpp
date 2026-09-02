@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QTimer>
+#include <QDateTime>
 
 namespace wordcount {
 
@@ -11,7 +12,6 @@ namespace wordcount {
 // （保持轻量，避免全量 monitor 的性能开销）
 static const QStringList kMonitorRules = {
     // QStringLiteral("type='signal',sender='org.fcitx.Fcitx5',interface='org.fcitx.Fcitx.InputContext1'"),
-    // QStringLiteral("type='signal',sender='org.fcitx.Fcitx',interface='org.fcitx.Fcitx.InputContext'"),
     // fcitx5 标准信号（不限制 sender）
     QStringLiteral("type='signal',interface='org.fcitx.Fcitx.InputContext1',member='CommitString'"),
     // fcitx4 兼容信号（WPS 使用，不限制 sender）
@@ -32,6 +32,19 @@ bool Fcitx5Monitor::start()
 {
     if (m_active) return true;
 
+    if (m_fallbackMode) {
+        qDebug() << "已在降级模式，不再尝试启动 dbus-monitor";
+        return false;
+    }
+
+    // 冷却检查：避免频繁重启（至少间隔 2 秒）
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now - m_lastStartAttemptMs < 2000) {
+        qDebug() << "启动尝试过于频繁，跳过";
+        return false;
+    }
+    m_lastStartAttemptMs = now;
+
     m_process = new QProcess(this);
     m_process->setProcessChannelMode(QProcess::SeparateChannels);
     connect(m_process, &QProcess::readyReadStandardOutput,
@@ -45,6 +58,9 @@ bool Fcitx5Monitor::start()
     // 只触发 errorOccurred，必须单独连接，否则会漏兜底
     connect(m_process, &QProcess::errorOccurred,
             this, &Fcitx5Monitor::onProcessError);
+    // 成功启动
+    connect(m_process, &QProcess::started,
+            this, &Fcitx5Monitor::onProcessStarted);
 
     QStringList args;
     args << QStringLiteral("--session");
@@ -54,6 +70,7 @@ bool Fcitx5Monitor::start()
     args << kMonitorRules;
 
     m_process->start(QStringLiteral("dbus-monitor"), args);
+    
     // 不阻塞 GUI 线程等启动：QProcess::start 是异步的，立即返回；
     // dbus-monitor 若无法启动，会走 errorOccurred 信号由
     // onProcessError 的重启退避逻辑兜底（NEW-K 稳定判定已覆盖
@@ -65,6 +82,8 @@ bool Fcitx5Monitor::start()
                    << m_process->errorString();
         m_process->deleteLater();
         m_process = nullptr;
+        // 尝试降级模式
+        tryFallbackMode();
         return false;
     }
 
@@ -83,6 +102,35 @@ bool Fcitx5Monitor::start()
     });
     qDebug() << "fcitx5 监听已启动（dbus-monitor --monitor 模式）";
     return true;
+}
+
+void Fcitx5Monitor::onProcessStarted()
+{
+    // 子进程启动成功，准备稳定计时
+    QProcess *started = m_process;
+    QTimer::singleShot(kStableUptimeMs, this, [this, started]() {
+        if (m_active && m_process == started
+                && m_process->state() == QProcess::Running) {
+            m_restartCount = 0;
+            qDebug() << "dbus-monitor 已稳定运行，重置重启计数";
+        }
+    });
+}
+
+void Fcitx5Monitor::tryFallbackMode()
+{
+    if (m_fallbackMode) return;
+
+    qWarning() << "dbus-monitor 无法启动，进入降级模式";
+    m_fallbackMode = true;
+    m_active = false;
+
+    // 通知上层监听器已失败
+    emit monitorFailed();
+
+    // 降级方案：尝试用 QDBusConnection 直接订阅（虽然可能收不到定向信号，
+    // 但至少能收到广播信号，聊胜于无）
+    // 这里仅记录，实际降级逻辑由上层决定
 }
 
 void Fcitx5Monitor::stop()
@@ -147,12 +195,22 @@ void Fcitx5Monitor::onProcessErrorOutput()
     // 捕获关键字并打出明确告警，便于排障（不再静默降级）。
     const QByteArray err = m_process->readAllStandardError();
     const QString errText = QString::fromUtf8(err);
+
+    // 检测 BecomeMonitor 被拒（致命错误进入降级模式）
     if (errText.contains(QStringLiteral("BecomeMonitor"), Qt::CaseInsensitive)
         || errText.contains(QStringLiteral("AccessDenied"), Qt::CaseInsensitive)
         || errText.contains(QStringLiteral("Not allowed"), Qt::CaseInsensitive)) {
-        qWarning() << "dbus-monitor BecomeMonitor 被拒绝（可能受 D-Bus 策略限制），"
-                   << "插件将无法统计字数。stderr:" << errText.trimmed();
-    } else if (!errText.trimmed().isEmpty()) {
+        qWarning() << "dbus-monitor BecomeMonitor 被拒绝，进入降级模式";
+        m_fallbackMode = true;
+        emit monitorFailed();
+        // 主动停止子进程
+        if (m_process && m_process->state() == QProcess::Running) {
+            m_process->kill();
+        }
+        return;
+    }
+
+    if (!errText.trimmed().isEmpty()) {
         qDebug() << "dbus-monitor stderr:" << errText.trimmed();
     }
 }
@@ -292,37 +350,54 @@ void Fcitx5Monitor::onProcessError()
         // 正在主动停止，不重启（避免卸载/禁用时进程抖动）
         return;
     }
-    // 防重入：errorOccurred 与 finished 会双双触发本函数，
-    // 首次进入后置位，第二次（同一崩溃事件）直接忽略，
-    // 保证每次崩溃只计数一次、只排程一次重启
-    if (m_restarting) return;
-    m_restarting = true;
+
+    if (m_fallbackMode) {
+        // 已在降级模式，不再尝试重启
+        return;
+    }
+
+    // 检查进程退出状态，如果是正常退出（非崩溃），不重启
+    if (m_process) {
+        int exitCode = m_process->exitCode();
+        QProcess::ExitStatus status = m_process->exitStatus();
+        if (status == QProcess::NormalExit && exitCode == 0) {
+            qDebug() << "dbus-monitor 正常退出，不重启";
+            m_process->deleteLater();
+            m_process = nullptr;
+            m_active = false;
+            m_restarting = false;
+            return;
+        }
+    }
+
+    // 异常退出，尝试重启
     if (m_restartCount >= kMaxRestartCount) {
-        qWarning() << "dbus-monitor 多次异常退出，停止自动重启"
-                   << "(次数上限" << kMaxRestartCount << ")";
+        qWarning() << "dbus-monitor 多次异常退出，停止自动重启 (次数上限"
+                   << kMaxRestartCount << ")";
         m_active = false;
         m_restarting = false;
+        tryFallbackMode();
         if (m_process) {
             m_process->deleteLater();
             m_process = nullptr;
         }
         return;
     }
+
     ++m_restartCount;
     qWarning() << "dbus-monitor 子进程异常退出，尝试重启 ("
                << m_restartCount << "/" << kMaxRestartCount << ")";
-    // 简单退避：重启次数越多，等待越久（500ms * 次数）
+
+    // 退避延迟：递增等待时间
     const int delay = 500 * m_restartCount;
     if (m_process) {
         m_process->deleteLater();
         m_process = nullptr;
     }
+
     QTimer::singleShot(delay, this, [this]() {
-        // 恢复防重入标志：允许下一次独立崩溃事件再次触发
         m_restarting = false;
-        // 审计 L8：singleShot 延迟期间可能已 stop() 完成（卸载/禁用），
-        // 必须同时检查 m_stopping 与 m_active，避免无意义重启一次
-        if (!m_stopping && m_active) {
+        if (!m_stopping && !m_fallbackMode && !m_active) {
             start();
         }
     });
