@@ -9,6 +9,10 @@
 #include <qglobal.h>
 
 namespace wordcount {
+    struct TierScheme;
+}
+
+namespace wordcount {
 
 struct WorkRef {
     const char *name;   // 作品名（UTF-8）

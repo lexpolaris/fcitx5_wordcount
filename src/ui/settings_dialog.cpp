@@ -3,6 +3,7 @@
 #include "theme_helper.h"
 #include "engine/statistics_engine.h"
 #include "engine/database_storage.h"
+#include "core/level_system.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -46,7 +47,7 @@ void SettingsDialog::setupUI()
 
     mainLayout->addWidget(tabs);
 
-    m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     mainLayout->addWidget(m_buttonBox);
 
     setLayout(mainLayout);
@@ -78,6 +79,12 @@ QWidget* SettingsDialog::createGeneralTab()
     m_comboTheme->addItem(tr("亮色"), static_cast<int>(wordcount::ThemeMode::Light));
     m_comboTheme->addItem(tr("暗色"), static_cast<int>(wordcount::ThemeMode::Dark));
     formLayout->addRow(tr("主题"), m_comboTheme);
+
+    // 段位方案选择
+    m_comboTierScheme = new QComboBox(this);
+    m_comboTierScheme->addItems(wordcount::LevelSystem::schemeNames());
+    m_comboTierScheme->setCurrentIndex(wordcount::LevelSystem::currentSchemeIndex());
+    formLayout->addRow(tr("段位系统"), m_comboTierScheme);
 
     // 开机自启
     m_checkAutoStart = new QCheckBox(tr("开机自动启动"), this);
@@ -169,8 +176,9 @@ QWidget* SettingsDialog::createDatabaseTab()
 
 void SettingsDialog::connectSignals()
 {
+    // Ok → 保存并关闭
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::saveSettings);
-    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::settingsApplied);
+    // Cancel → 直接关闭
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     // 监听配置变化，当外部修改配置时更新UI
@@ -210,6 +218,13 @@ void SettingsDialog::loadSettings()
     if (themeIndex < 0) themeIndex = 0;
     m_comboTheme->setCurrentIndex(themeIndex);
 
+    // 段位设置
+    int schemeIndex = config.tierScheme();
+    if (schemeIndex < 0 || schemeIndex >= m_comboTierScheme->count()) {
+        schemeIndex = 0;
+    }
+    m_comboTierScheme->setCurrentIndex(schemeIndex);
+
     // 开机自启
     m_checkAutoStart->setChecked(config.autoStart());
 }
@@ -226,6 +241,12 @@ void SettingsDialog::saveSettings()
     config.setTrayDisplayMode(m_comboTrayMode->currentData().toInt());
     config.setThemeMode(m_comboTheme->currentData().toInt());
     config.setAutoStart(m_checkAutoStart->isChecked());
+    // 段位系统
+    if (m_comboTierScheme) {
+        int schemeIndex = m_comboTierScheme->currentIndex();
+        config.setTierScheme(schemeIndex);
+        wordcount::LevelSystem::setScheme(schemeIndex);
+    }
 
     // 恢复信号
     config.blockSignals(false);

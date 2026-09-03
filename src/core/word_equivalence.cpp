@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 // 「约等于一部作品」类比实现
 #include "word_equivalence.h"
+#include "level_system.h"
 #include <algorithm>
 
 namespace wordcount {
@@ -75,6 +76,15 @@ const QVector<WorkRef>& WordEquivalence::works()
 
 QString WordEquivalence::describe(qint64 totalChars)
 {
+    // 获取当前方案名称
+    const auto& scheme = LevelSystem::currentScheme();
+    QString schemeName = QString::fromUtf8(scheme.name);
+    
+    // 只在"文人雅称"和"科举制"方案下显示作品类比
+    if (schemeName != "文人雅称" && schemeName != "科举制") {
+        return QString();
+    }
+
     const QVector<WorkRef> &list = works();
     if (list.isEmpty()) {
         return QString();

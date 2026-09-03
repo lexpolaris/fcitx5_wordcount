@@ -49,6 +49,7 @@ private:
     QCheckBox* m_checkEmoji = nullptr;
     QComboBox* m_comboTrayMode = nullptr;
     QComboBox* m_comboTheme = nullptr;
+    QComboBox* m_comboTierScheme = nullptr;
     QCheckBox* m_checkAutoStart = nullptr;
 
     // 数据库维护

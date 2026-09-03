@@ -5,6 +5,7 @@
 #include "app_core.h"
 
 #include "core/fcitx5_monitor.h"
+#include "core/level_system.h"
 #include "engine/statistics_engine.h"
 #include "engine/database_storage.h"
 #include "ui/detail_panel.h"
@@ -134,13 +135,17 @@ bool AppCore::init()
     wordcount::ThemeHelper::instance().setThemeMode(
         static_cast<wordcount::ThemeMode>(config.themeMode()));
 
-    // 8. 配置变化 → 同步到引擎
+    // 8. 应用段位方案
+    int schemeIndex = config.tierScheme();
+    wordcount::LevelSystem::setScheme(schemeIndex);
+
+    // 9. 配置变化 → 同步到引擎
     connect(&config, &ConfigManager::countPunctuationChanged,
             m_engine, &wordcount::StatisticsEngine::setCountPunctuation);
     connect(&config, &ConfigManager::countEmojiChanged,
             m_engine, &wordcount::StatisticsEngine::setCountEmoji);
 
-    // 9. 加载数据（触发首次 statsChanged）
+    // 10. 加载数据（触发首次 statsChanged）
     m_engine->load();
 
     return true;

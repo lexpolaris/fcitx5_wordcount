@@ -438,7 +438,9 @@ namespace wordcount {
             p.setFont(QFont("", 9));
             QString progText;
             if (d.progress >= 1.0 && d.nextThreshold == d.totalChars) {
-                progText = "已达巅峰";
+                // 动态获取顶级段位名称
+                const TierDef& topTier = LevelSystem::tierAt(LevelSystem::kTierCount - 1);
+                progText = QString("🏆 %1").arg(QString::fromUtf8(topTier.tierName));
             } else {
                 qint64 remain = d.nextThreshold - d.totalChars;
                 if (remain < 0) remain = 0;
@@ -455,7 +457,14 @@ namespace wordcount {
             p.drawText(QRect(margin, y, w - 2*margin, 20), Qt::AlignLeft, "段位里程碑");
 
             y += 24;
-            QStringList allTiers = {"蒙童", "布衣", "青衿", "文士", "墨客", "雅士", "鸿儒", "文宗", "文圣"};
+
+            // ★ 动态获取当前方案的所有段位名称
+            const auto& scheme = LevelSystem::currentScheme();
+            QStringList allTiers;
+            for (int i = 0; i < LevelSystem::kTierCount; ++i) {
+                allTiers.append(QString::fromUtf8(scheme.tiers[i].tierName));
+            }
+
             int currentIdx = allTiers.indexOf(d.tierName);
             if (currentIdx < 0) currentIdx = 0;
 

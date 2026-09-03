@@ -36,6 +36,10 @@ public:
     int themeMode() const;
     void setThemeMode(int mode);
 
+    // ========== 段位设置 ==========
+    int tierScheme() const;
+    void setTierScheme(int index);
+
     // ========== 启动设置 ==========
     bool autoStart() const;
     void setAutoStart(bool enabled);
@@ -47,6 +51,8 @@ signals:
     void trayDisplayModeChanged(int mode);
     void themeModeChanged(int mode);
     void autoStartChanged(bool enabled);
+    // 段位设置
+    void tierSchemeChanged(int index);
 
     // 通用配置变更信号（任何配置改变时触发）
     void anySettingChanged();

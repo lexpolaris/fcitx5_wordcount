@@ -116,6 +116,22 @@ void ConfigManager::setTrayDisplayMode(int mode)
     emit anySettingChanged();
 }
 
+// ========== 段位设置实现 ==========
+int ConfigManager::tierScheme() const
+{
+    return value("tierScheme", 0);
+}
+
+void ConfigManager::setTierScheme(int index)
+{
+    if (tierScheme() == index) {
+        return;
+    }
+    setValue("tierScheme", index);
+    emit tierSchemeChanged(index);
+    emit anySettingChanged();
+}
+
 // ========== 主题设置实现 ==========
 int ConfigManager::themeMode() const
 {

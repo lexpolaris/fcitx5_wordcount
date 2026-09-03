@@ -181,9 +181,11 @@ namespace wordcount {
         m_tierLine = QStringLiteral("%1 · %2").arg(m_tierName).arg(m_tierRank);
 
         if (m_isMax) {
-            m_tierSubtitle = QStringLiteral("已达%1").arg(QString::fromUtf8(
-                LevelSystem::tierAt(lv.tierIndex).fullName));
-            m_progressLine = QStringLiteral("文坛巅峰");
+            // 获取当前方案的顶级段位名称
+            const TierDef& topTier = LevelSystem::tierAt(LevelSystem::kTierCount - 1);
+            m_tierSubtitle = QStringLiteral("已达%1").arg(QString::fromUtf8(topTier.fullName));
+            // 动态显示 "已达XXX"
+            m_progressLine = QStringLiteral("已达 %1").arg(QString::fromUtf8(topTier.tierName));
         } else {
             m_tierSubtitle = QString::fromUtf8(LevelSystem::tierAt(lv.tierIndex).fullName);
             const QString nextRank = QString::fromUtf8(
