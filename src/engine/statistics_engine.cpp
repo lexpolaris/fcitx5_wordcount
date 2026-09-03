@@ -93,13 +93,13 @@ void StatisticsEngine::flushToDatabase()
         return;
     }
 
-    QSqlDatabase db = QSqlDatabase::database("wordcount_conn");
+    QSqlDatabase db = m_db->getDatabase();
     if (!db.isOpen()) {
         if (!m_db->open()) {
             qWarning() << "无法打开数据库，稍后重试";
             return;
         }
-        db = QSqlDatabase::database("wordcount_conn");
+        db = m_db->getDatabase();
     }
 
     db.transaction();
@@ -291,7 +291,7 @@ void StatisticsEngine::resetToday()
     m_cachedDaily7[6] = 0;
 
     if (m_db) {
-        QSqlDatabase db = QSqlDatabase::database("wordcount_conn");
+        QSqlDatabase db = m_db->getDatabase();
         if (!db.isOpen()) m_db->open();
         QSqlQuery query(db);
         query.prepare("DELETE FROM commits WHERE date = :date;");
@@ -322,7 +322,7 @@ void StatisticsEngine::resetAll()
     flushToDatabase();
 
     if (m_db) {
-        QSqlDatabase db = QSqlDatabase::database("wordcount_conn");
+        QSqlDatabase db = m_db->getDatabase();
         if (!db.isOpen()) m_db->open();
         QSqlQuery query(db);
         query.exec("DELETE FROM commits;");

@@ -9,6 +9,7 @@
 #include <QVector>
 #include <array>
 #include <qglobal.h>
+#include <QJsonObject>
 
 namespace wordcount {
 
@@ -65,6 +66,16 @@ public:
     /// 更新 meta 总字数
     bool setTotal(qint64 total);
 
+    // ---------- 导出/导入 ----------
+    /// 导出所有数据为 JSON 对象
+    QJsonObject exportAll() const;
+
+    /// 从 JSON 对象导入数据（会清空现有数据）
+    /// \param data JSON 对象
+    /// \param errorMsg 错误信息
+    /// \return 是否成功
+    bool importAll(const QJsonObject& data, QString* errorMsg = nullptr);
+
     // ---------- 维护 ----------
     /// 清理旧数据（保留最近 N 个月），注意：该操作耗时会锁表，建议空闲时执行
     bool cleanupOldRecords(int monthsToKeep = 12);
@@ -75,6 +86,16 @@ public:
     /// 打开/关闭连接（一般不用手动）
     bool open();
     void close();
+
+    /// 获取数据库路径
+    QString getDbPath() const { return m_dbPath; }
+
+    /// 获取数据库连接（仅供内部使用）
+    QSqlDatabase getDatabase() const { return m_db; }
+
+    /// 确认数据库是否打开
+    bool isOpen() const { return m_db.isOpen(); }
+
 
 private:
     bool createTables();

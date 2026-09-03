@@ -161,6 +161,7 @@ void AppCore::onSettingsRequested()
 {
     SettingsDialog dlg(nullptr);
     dlg.setTrayManager(m_trayManager);
+    dlg.setEngine(m_engine);
     dlg.exec();
     // 配置变更由 ConfigManager 信号驱动，无需额外操作
 }

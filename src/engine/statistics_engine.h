@@ -42,6 +42,9 @@ namespace wordcount {
         int peakSpeed() const;                     // 10s 窗口峰值速度
         std::array<qint64, 5> distToday() const;   // 字词分布
 
+        /// 获取数据库存储（仅供设置面板使用）
+        DatabaseStorage* getDatabase() const { return m_db; }
+
     signals:
         void statsChanged(qint64 total, qint64 today, double wpm);
         void levelUp(int oldLevel, int newLevel, int levelsCrossed);

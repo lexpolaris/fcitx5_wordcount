@@ -6,6 +6,9 @@
 #include <QDateTime>
 #include <QFile>
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonDocument>
 
 namespace wordcount {
 
@@ -435,6 +438,188 @@ bool DatabaseStorage::vacuum()
         qWarning() << "VACUUM 失败:" << query.lastError().text();
         return false;
     }
+    return true;
+}
+
+// ---------- 导出/导入 ----------
+
+QJsonObject DatabaseStorage::exportAll() const
+{
+    QMutexLocker locker(&m_mutex);
+    QJsonObject root;
+    root["version"] = "1.0";
+    root["exportDate"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+
+    // 确保数据库已打开
+    if (!m_db.isOpen()) {
+        const_cast<DatabaseStorage*>(this)->open();
+    }
+
+    if (!m_db.isOpen()) {
+        qWarning() << "exportAll: 数据库未打开";
+        return root;
+    }
+
+    // 导出 commits
+    QJsonArray commitsArray;
+    QSqlQuery query(m_db);
+    if (query.exec("SELECT ts, date, hour, chars, len_cat FROM commits ORDER BY ts;")) {
+        while (query.next()) {
+            QJsonObject obj;
+            obj["ts"] = query.value(0).toLongLong();
+            obj["date"] = query.value(1).toString();
+            obj["hour"] = query.value(2).toInt();
+            obj["chars"] = query.value(3).toInt();
+            obj["lenCat"] = query.value(4).toInt();
+            commitsArray.append(obj);
+        }
+    } else {
+        qWarning() << "exportAll: 查询 commits 失败:" << query.lastError().text();
+    }
+    root["commits"] = commitsArray;
+
+    // 导出 daily_agg
+    QJsonArray dailyArray;
+    QSqlQuery query2(m_db);
+    if (query2.exec("SELECT date, total_chars, cnt_commits, cnt_1, cnt_2, cnt_3, cnt_4, cnt_5plus FROM daily_agg;")) {
+        while (query2.next()) {
+            QJsonObject obj;
+            obj["date"] = query2.value(0).toString();
+            obj["totalChars"] = query2.value(1).toLongLong();
+            obj["cntCommits"] = query2.value(2).toInt();
+            obj["cnt1"] = query2.value(3).toInt();
+            obj["cnt2"] = query2.value(4).toInt();
+            obj["cnt3"] = query2.value(5).toInt();
+            obj["cnt4"] = query2.value(6).toInt();
+            obj["cnt5plus"] = query2.value(7).toInt();
+            dailyArray.append(obj);
+        }
+    } else {
+        qWarning() << "exportAll: 查询 daily_agg 失败:" << query2.lastError().text();
+    }
+    root["dailyAgg"] = dailyArray;
+
+    // 导出 meta
+    QJsonObject metaObj;
+    QSqlQuery query3(m_db);
+    if (query3.exec("SELECT key, value FROM meta;")) {
+        while (query3.next()) {
+            metaObj[query3.value(0).toString()] = query3.value(1).toLongLong();
+        }
+    } else {
+        qWarning() << "exportAll: 查询 meta 失败:" << query3.lastError().text();
+    }
+    root["meta"] = metaObj;
+
+    return root;
+}
+
+bool DatabaseStorage::importAll(const QJsonObject& data, QString* errorMsg)
+{
+    QMutexLocker locker(&m_mutex);
+
+    // 验证版本
+    if (data["version"].toString() != "1.0") {
+        if (errorMsg) *errorMsg = tr("不支持的版本: %1").arg(data["version"].toString());
+        return false;
+    }
+
+    // 确保数据库已打开
+    if (!m_db.isOpen()) {
+        if (!open()) {
+            if (errorMsg) *errorMsg = tr("无法打开数据库");
+            return false;
+        }
+    }
+
+    // 开始事务
+    QSqlDatabase db = m_db;
+    db.transaction();
+
+    bool success = true;
+    int commitCount = 0;
+
+    try {
+        // 清空现有数据
+        QSqlQuery clearQuery(db);
+        if (!clearQuery.exec("DELETE FROM commits;")) {
+            throw std::runtime_error("清空 commits 表失败: " + clearQuery.lastError().text().toStdString());
+        }
+        if (!clearQuery.exec("DELETE FROM daily_agg;")) {
+            throw std::runtime_error("清空 daily_agg 表失败: " + clearQuery.lastError().text().toStdString());
+        }
+        if (!clearQuery.exec("DELETE FROM meta;")) {
+            throw std::runtime_error("清空 meta 表失败: " + clearQuery.lastError().text().toStdString());
+        }
+
+        // 导入 commits
+        QJsonArray commits = data["commits"].toArray();
+        QSqlQuery insertQuery(db);
+        insertQuery.prepare(
+            "INSERT INTO commits (ts, date, hour, chars, len_cat) "
+            "VALUES (:ts, :date, :hour, :chars, :len_cat);"
+        );
+
+        for (int i = 0; i < commits.size(); ++i) {
+            QJsonObject obj = commits[i].toObject();
+            insertQuery.bindValue(":ts", obj["ts"].toVariant().toLongLong());
+            insertQuery.bindValue(":date", obj["date"].toString());
+            insertQuery.bindValue(":hour", obj["hour"].toInt());
+            insertQuery.bindValue(":chars", obj["chars"].toInt());
+            insertQuery.bindValue(":len_cat", obj["lenCat"].toInt());
+
+            if (!insertQuery.exec()) {
+                throw std::runtime_error("插入 commits 失败: " + insertQuery.lastError().text().toStdString());
+            }
+            commitCount++;
+        }
+
+        // 导入 daily_agg
+        QJsonArray daily = data["dailyAgg"].toArray();
+        QSqlQuery dailyQuery(db);
+        dailyQuery.prepare(
+            "INSERT INTO daily_agg (date, total_chars, cnt_commits, cnt_1, cnt_2, cnt_3, cnt_4, cnt_5plus) "
+            "VALUES (:date, :total_chars, :cnt_commits, :cnt_1, :cnt_2, :cnt_3, :cnt_4, :cnt_5plus);"
+        );
+
+        for (const QJsonValue& val : daily) {
+            QJsonObject obj = val.toObject();
+            dailyQuery.bindValue(":date", obj["date"].toString());
+            dailyQuery.bindValue(":total_chars", obj["totalChars"].toVariant().toLongLong());
+            dailyQuery.bindValue(":cnt_commits", obj["cntCommits"].toInt());
+            dailyQuery.bindValue(":cnt_1", obj["cnt1"].toInt());
+            dailyQuery.bindValue(":cnt_2", obj["cnt2"].toInt());
+            dailyQuery.bindValue(":cnt_3", obj["cnt3"].toInt());
+            dailyQuery.bindValue(":cnt_4", obj["cnt4"].toInt());
+            dailyQuery.bindValue(":cnt_5plus", obj["cnt5plus"].toInt());
+
+            if (!dailyQuery.exec()) {
+                throw std::runtime_error("插入 daily_agg 失败: " + dailyQuery.lastError().text().toStdString());
+            }
+        }
+
+        // 导入 meta
+        QJsonObject meta = data["meta"].toObject();
+        QSqlQuery metaQuery(db);
+        metaQuery.prepare("INSERT INTO meta (key, value) VALUES (:key, :value);");
+
+        for (auto it = meta.begin(); it != meta.end(); ++it) {
+            metaQuery.bindValue(":key", it.key());
+            metaQuery.bindValue(":value", it.value().toVariant().toLongLong());
+            if (!metaQuery.exec()) {
+                throw std::runtime_error("插入 meta 失败: " + metaQuery.lastError().text().toStdString());
+            }
+        }
+
+    } catch (const std::exception& e) {
+        db.rollback();
+        if (errorMsg) *errorMsg = tr("导入失败: %1").arg(e.what());
+        qWarning() << "importAll 失败:" << e.what();
+        return false;
+    }
+
+    db.commit();
+    qDebug() << "importAll 成功，导入" << commitCount << "条记录";
     return true;
 }
 
