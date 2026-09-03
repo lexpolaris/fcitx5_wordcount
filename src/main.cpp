@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QTimer>
+#include <csignal>
 #include "app_core.h"
 
 int main(int argc, char *argv[])
@@ -8,6 +9,10 @@ int main(int argc, char *argv[])
     app.setApplicationName("Fcitx5WordCount");
     app.setOrganizationName("Fcitx5WordCount");
     app.setQuitOnLastWindowClosed(false);
+
+    // 处理信号，确保正常退出
+    signal(SIGINT, [](int) { QApplication::quit(); });
+    signal(SIGTERM, [](int) { QApplication::quit(); });
 
     AppCore& core = AppCore::instance();
     

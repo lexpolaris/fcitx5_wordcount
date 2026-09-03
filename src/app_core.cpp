@@ -29,33 +29,48 @@ AppCore& AppCore::instance()
 
 bool AppCore::acquireSingleInstance()
 {
-    // 尝试创建共享内存，如果已存在则说明已有实例在运行
-    m_sharedMem.setKey(QString::fromUtf8(kSharedMemKey));
+    // 使用 QLockFile 实现更可靠的单例检测
+    // QLockFile 在进程异常退出时会自动释放锁（通过文件锁的机制）
+    QString lockDir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    if (lockDir.isEmpty()) {
+        lockDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    }
+    QString lockPath = lockDir + "/" + kLockFileName;
     
-    if (m_sharedMem.attach()) {
-        // 共享内存已存在，说明已有实例
-        qWarning() << "已有程序实例在运行，退出";
+    // 确保目录存在
+    QDir().mkpath(lockDir);
+    
+    m_lockFile = new QLockFile(lockPath);  // 修正：只传路径，不传 parent
+    
+    // 设置锁的过期时间，防止僵尸锁
+    m_lockFile->setStaleLockTime(5000);  // 5秒后认为锁已过期
+    
+    if (m_lockFile->tryLock()) {
+        qDebug() << "单例锁获取成功:" << lockPath;
+        return true;
+    } else {
+        // 获取锁失败，检查是否是僵尸锁
+        qint64 pid;
+        QString hostname, appname;
+        if (m_lockFile->getLockInfo(&pid, &hostname, &appname)) {
+            qWarning() << "已有程序实例在运行 (PID:" << pid << ", Host:" << hostname << ")";
+        } else {
+            qWarning() << "已有程序实例在运行";
+        }
+        
+        delete m_lockFile;
+        m_lockFile = nullptr;
         return false;
     }
-
-    // 创建共享内存（至少1字节）
-    if (!m_sharedMem.create(1)) {
-        // 创建失败，可能权限问题，尝试附加已有
-        if (m_sharedMem.attach()) {
-            qWarning() << "已有程序实例在运行，退出";
-            return false;
-        }
-        // 实在无法创建，继续运行但记录警告
-        qWarning() << "无法创建共享内存，但继续运行（可能无法防止多实例）";
-    }
-
-    return true;
 }
 
 void AppCore::releaseSingleInstance()
 {
-    if (m_sharedMem.isAttached()) {
-        m_sharedMem.detach();
+    if (m_lockFile) {
+        m_lockFile->unlock();
+        delete m_lockFile;
+        m_lockFile = nullptr;
+        qDebug() << "单例锁已释放";
     }
 }
 
@@ -202,11 +217,11 @@ void AppCore::shutdown()
         m_db = nullptr;
     }
 
-    // 6. 配置
-    ConfigManager::instance().sync();
-
-    // 7. 共享内存
+    // 6. 释放单例锁
     releaseSingleInstance();
+
+    // 7. 配置
+    ConfigManager::instance().sync();
 
     qDebug() << "AppCore::shutdown() 完成";
 }

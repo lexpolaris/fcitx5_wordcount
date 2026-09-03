@@ -5,6 +5,7 @@
 #pragma once
 
 #include <QObject>
+#include <QLockFile>
 #include <QSharedMemory>
 
 namespace wordcount {
@@ -45,6 +46,6 @@ private:
     wordcount::Fcitx5Monitor* m_monitor = nullptr;
     TrayIconManager* m_trayManager = nullptr;
 
-    QSharedMemory m_sharedMem;
-    static constexpr const char* kSharedMemKey = "Fcitx5WordCount_SingleInstance";
+    QLockFile* m_lockFile = nullptr;
+    static constexpr const char* kLockFileName = "fcitx5wordcount.lock";
 };

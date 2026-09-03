@@ -357,10 +357,16 @@ std::array<qint64, 7> DatabaseStorage::getDaily7(const QString& today) const
         qWarning() << "getDaily7 查询失败:" << query.lastError().text();
         return result;
     }
-    int idx = 0;
+    // 根据日期计算正确的索引位置
     while (query.next()) {
-        if (idx < 7) {
-            result[idx++] = query.value(1).toLongLong();
+        QString dateStr = query.value(0).toString();
+        QDate date = QDate::fromString(dateStr, "yyyy-MM-dd");
+        if (date.isValid()) {
+            int daysOffset = date.daysTo(current);  // 距离今天的天数
+            int idx = 6 - daysOffset;  // 6天前是0，今天是6
+            if (idx >= 0 && idx < 7) {
+                result[idx] = query.value(1).toLongLong();
+            }
         }
     }
     return result;
