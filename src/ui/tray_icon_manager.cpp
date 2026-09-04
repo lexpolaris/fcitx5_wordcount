@@ -184,6 +184,11 @@ void TrayIconManager::setupContextMenu()
 
     m_trayMenu->addSeparator();
 
+    // 重新启动
+    QAction* restartAction = new QAction(tr("重新启动"), this);
+    connect(restartAction, &QAction::triggered, this, &TrayIconManager::restartRequested);
+    m_trayMenu->addAction(restartAction);
+
     // 退出
     QAction* quitAction = new QAction(tr("退出"), this);
     connect(quitAction, &QAction::triggered, this, &TrayIconManager::quitRequested);

@@ -37,6 +37,7 @@ signals:
     void settingsRequested();
     void aboutRequested();
     void quitRequested();
+    void restartRequested();
 
 private slots:
     void onActivated(QSystemTrayIcon::ActivationReason reason);

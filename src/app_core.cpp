@@ -20,7 +20,8 @@
 #include <QDir>
 #include <QMessageBox>
 #include <QDebug>
-
+#include <QProcess>
+#include <QTimer>
 
 AppCore& AppCore::instance()
 {
@@ -122,6 +123,8 @@ bool AppCore::init()
             this, &AppCore::onSettingsRequested);
     connect(m_trayManager, &TrayIconManager::aboutRequested,
             this, &AppCore::onAboutRequested);
+    connect(m_trayManager, &TrayIconManager::restartRequested,
+            this, &AppCore::onRestartRequested);
     connect(m_trayManager, &TrayIconManager::quitRequested,
             this, &AppCore::onQuitRequested);
 
@@ -174,8 +177,8 @@ void AppCore::onSettingsRequested()
 void AppCore::onAboutRequested()
 {
     QMessageBox::about(nullptr, tr("关于打字统计"),
-                       tr("<b>打字统计 v1.7</b><br>"
-                       "统计 Fcitx 5 输入法输入的汉字字数，采用了文人段位系统。<br>"
+                       tr("<b>打字统计 v2.0</b><br>"
+                       "统计 Fcitx 5 输入法输入的汉字字数，采用了段位系统。<br>"
                        "基于Qt，完全本地运行。"));
 }
 
@@ -237,4 +240,25 @@ void AppCore::onQuitRequested()
     qDebug() << "收到退出请求";
     // 使用 QTimer::singleShot 避免在信号处理中直接删除
     QTimer::singleShot(0, qApp, &QApplication::quit);
+}
+
+void AppCore::onRestartRequested()
+{
+    qDebug() << "收到重新启动请求";
+    
+    // 先执行关闭流程
+    shutdown();
+    
+    // 重新启动应用程序
+    QString appPath = QCoreApplication::applicationFilePath();
+    QStringList arguments = QCoreApplication::arguments();
+    arguments.removeFirst();  // 移除程序路径本身
+    
+    qDebug() << "重新启动:" << appPath << arguments;
+    
+    // 启动新进程
+    QProcess::startDetached(appPath, arguments);
+    
+    // 退出当前进程
+    QTimer::singleShot(100, qApp, &QApplication::quit);
 }
