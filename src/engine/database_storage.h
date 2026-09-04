@@ -66,6 +66,15 @@ public:
     /// 更新 meta 总字数
     bool setTotal(qint64 total);
 
+    /// 获取指定日期范围的每日字数
+    std::vector<std::pair<QString, qint64>> getDailyRange(
+        const QString& from, const QString& to) const;
+
+    /// 获取指定日期范围的聚合数据
+    bool getAggRange(const QString& from, const QString& to,
+                     qint64& totalChars, int& totalCommits,
+                     int& cnt1, int& cnt2, int& cnt3, int& cnt4, int& cnt5plus) const;
+
     // ---------- 导出/导入 ----------
     /// 导出所有数据为 JSON 对象
     QJsonObject exportAll() const;

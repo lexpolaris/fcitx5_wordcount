@@ -11,6 +11,8 @@
 #include <array>
 #include <qglobal.h>
 
+#include <QDate>
+
 namespace wordcount {
     class StatisticsEngine;
 }
@@ -47,16 +49,14 @@ namespace wordcount {
 
         // 内部页面
         class TodayPage;
-        class EfficiencyPage;
-        class TrendPage;
         class LevelPage;
+        class AnalysisPage;
 
         StatisticsEngine* m_engine = nullptr;
         QTabWidget* m_tabWidget = nullptr;
         TodayPage* m_todayPage = nullptr;
-        EfficiencyPage* m_efficiencyPage = nullptr;
-        TrendPage* m_trendPage = nullptr;
         LevelPage* m_levelPage = nullptr;
+        AnalysisPage* m_analysisPage = nullptr;
 
         // 数据缓存（各页面共享）
         struct Cache {

@@ -154,6 +154,13 @@ void StatisticsEngine::onTextCommitted(const QString& text)
     m_cachedTotal += chars;
     m_cachedToday += chars;
 
+    // 记录输入时间
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_todayFirstCommitTime == 0) {
+        m_todayFirstCommitTime = now;
+    }
+    m_todayLastCommitTime = now;
+
     int hour = QTime::currentTime().hour();
     if (hour >= 0 && hour < 24) {
         m_cachedHourly[hour] += chars;
@@ -187,6 +194,11 @@ void StatisticsEngine::onTextCommitted(const QString& text)
     } else if (!m_flushTimer->isActive()) {
         m_flushTimer->start();
     }
+
+    // 更新峰值速度（基于本次提交的瞬时速度）
+    // 使用一个较短的时间窗口（如10秒）内的字数来计算瞬时速度
+    // 这里简化：用最近几次提交的时间差和字数计算
+    updateSpeedStats(chars, now);
 
     emit statsChanged(m_cachedTotal, m_cachedToday, currentWpm());
 }
@@ -224,8 +236,64 @@ void StatisticsEngine::checkDateRollover()
             m_flushTimer->stop();
         }
 
+        // 重置今日速度统计
+        m_avgSpeed = 0.0;
+        m_peakSpeed = 0;
+        m_todayFirstCommitTime = 0;
+        m_todayLastCommitTime = 0;
+        m_todayTotalTimeMinutes = 0;
+        m_speedSamples.clear();
+
         emit statsChanged(m_cachedTotal, m_cachedToday, currentWpm());
         qDebug() << "日期切换至" << today;
+    }
+}
+
+void StatisticsEngine::updateSpeedStats(qint64 chars, qint64 now)
+{
+    // 记录样本：用于计算峰值速度
+    m_speedSamples.append({now, chars});
+    
+    // 只保留最近60秒的样本（用于峰值计算）
+    qint64 cutoff = now - 60000;
+    while (!m_speedSamples.isEmpty() && m_speedSamples.first().ts < cutoff) {
+        m_speedSamples.removeFirst();
+    }
+    
+    // 计算最近10秒的瞬时速度
+    if (m_speedSamples.size() >= 2) {
+        qint64 oldestTs = m_speedSamples.first().ts;
+        qint64 newestTs = m_speedSamples.last().ts;
+        qint64 timeDiff = newestTs - oldestTs;
+        
+        // 至少要有2秒的间隔
+        if (timeDiff >= 2000) {
+            // 计算这期间的字符数
+            qint64 charsInWindow = 0;
+            for (const auto& s : m_speedSamples) {
+                charsInWindow += s.chars;
+            }
+            // 速度 = 字数 / (时间差/60000) = 字数 * 60000 / 时间差
+            double speed = static_cast<double>(charsInWindow) * 60000.0 / timeDiff;
+            
+            // 更新峰值
+            int speedInt = static_cast<int>(speed);
+            if (speedInt > m_peakSpeed) {
+                m_peakSpeed = speedInt;
+            }
+        }
+    }
+    
+    // 更新均速
+    if (m_todayFirstCommitTime > 0 && m_todayLastCommitTime > 0) {
+        qint64 totalTimeMs = m_todayLastCommitTime - m_todayFirstCommitTime;
+        if (totalTimeMs > 0) {
+            double minutes = totalTimeMs / 60000.0;
+            // 只在实际输入时间上计算，如果超过1小时，按实际时间算
+            if (minutes > 0) {
+                m_avgSpeed = m_cachedToday / minutes;
+            }
+        }
     }
 }
 
@@ -267,6 +335,16 @@ QJsonArray StatisticsEngine::daily7() const
         arr.append(static_cast<double>(v));
     }
     return arr;
+}
+
+double StatisticsEngine::avgSpeed() const
+{
+    return m_avgSpeed;
+}
+
+int StatisticsEngine::peakSpeed() const
+{
+    return m_peakSpeed;
 }
 
 // ---------- 配置接口 ----------
@@ -354,14 +432,39 @@ int StatisticsEngine::todayCommits() const
     return total;
 }
 
-int StatisticsEngine::peakSpeed() const
-{
-    return m_speed ? m_speed->peakSpeed() : 0;
-}
-
 std::array<qint64, 5> StatisticsEngine::distToday() const
 {
     return m_cachedDist;
+}
+
+std::vector<std::pair<QString, qint64>> StatisticsEngine::dailyRange(
+    const QString& from, const QString& to) const
+{
+    if (!m_db) return {};
+    return m_db->getDailyRange(from, to);
+}
+
+StatisticsEngine::RangeStats StatisticsEngine::rangeStats(
+    const QString& from, const QString& to) const
+{
+    RangeStats stats;
+    if (!m_db) return stats;
+
+    qint64 totalChars = 0;
+    int totalCommits = 0;
+    int cnt1 = 0, cnt2 = 0, cnt3 = 0, cnt4 = 0, cnt5plus = 0;
+
+    if (m_db->getAggRange(from, to, totalChars, totalCommits,
+                          cnt1, cnt2, cnt3, cnt4, cnt5plus)) {
+        stats.totalChars = totalChars;
+        stats.totalCommits = totalCommits;
+        stats.cnt1 = cnt1;
+        stats.cnt2 = cnt2;
+        stats.cnt3 = cnt3;
+        stats.cnt4 = cnt4;
+        stats.cnt5plus = cnt5plus;
+    }
+    return stats;
 }
 
 } // namespace wordcount

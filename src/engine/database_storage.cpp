@@ -623,4 +623,77 @@ bool DatabaseStorage::importAll(const QJsonObject& data, QString* errorMsg)
     return true;
 }
 
+// 获取聚合数据
+std::vector<std::pair<QString, qint64>> DatabaseStorage::getDailyRange(
+    const QString& from, const QString& to) const
+{
+    std::vector<std::pair<QString, qint64>> result;
+
+    QMutexLocker locker(&m_mutex);
+    if (!m_db.isOpen()) {
+        const_cast<DatabaseStorage*>(this)->open();
+    }
+
+    QSqlQuery query(m_db);
+    query.prepare(
+        "SELECT date, total_chars FROM daily_agg "
+        "WHERE date >= :from AND date <= :to ORDER BY date;"
+    );
+    query.bindValue(":from", from);
+    query.bindValue(":to", to);
+
+    if (!query.exec()) {
+        qWarning() << "getDailyRange 查询失败:" << query.lastError().text();
+        return result;
+    }
+
+    while (query.next()) {
+        result.push_back({
+            query.value(0).toString(),
+            query.value(1).toLongLong()
+        });
+    }
+    return result;
+}
+
+bool DatabaseStorage::getAggRange(const QString& from, const QString& to,
+                                  qint64& totalChars, int& totalCommits,
+                                  int& cnt1, int& cnt2, int& cnt3, int& cnt4, int& cnt5plus) const
+{
+    totalChars = 0;
+    totalCommits = 0;
+    cnt1 = cnt2 = cnt3 = cnt4 = cnt5plus = 0;
+
+    QMutexLocker locker(&m_mutex);
+    if (!m_db.isOpen()) {
+        const_cast<DatabaseStorage*>(this)->open();
+    }
+
+    QSqlQuery query(m_db);
+    query.prepare(
+        "SELECT SUM(total_chars), SUM(cnt_commits), "
+        "SUM(cnt_1), SUM(cnt_2), SUM(cnt_3), SUM(cnt_4), SUM(cnt_5plus) "
+        "FROM daily_agg WHERE date >= :from AND date <= :to;"
+    );
+    query.bindValue(":from", from);
+    query.bindValue(":to", to);
+
+    if (!query.exec()) {
+        qWarning() << "getAggRange 查询失败:" << query.lastError().text();
+        return false;
+    }
+
+    if (query.next()) {
+        totalChars = query.value(0).toLongLong();
+        totalCommits = query.value(1).toInt();
+        cnt1 = query.value(2).toInt();
+        cnt2 = query.value(3).toInt();
+        cnt3 = query.value(4).toInt();
+        cnt4 = query.value(5).toInt();
+        cnt5plus = query.value(6).toInt();
+        return true;
+    }
+    return true;
+}
+
 } // namespace wordcount

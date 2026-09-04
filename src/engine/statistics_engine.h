@@ -39,8 +39,21 @@ namespace wordcount {
         void resetAll();
 
         int todayCommits() const;                  // 今日提交次数
-        int peakSpeed() const;                     // 10s 窗口峰值速度
+        int peakSpeed() const;                     // 今日峰值速度
+        double avgSpeed() const;                   // 今日平均速度
         std::array<qint64, 5> distToday() const;   // 字词分布
+
+        /// 获取指定日期范围的每日数据
+        std::vector<std::pair<QString, qint64>> dailyRange(
+            const QString& from, const QString& to) const;
+
+        /// 获取指定日期范围的聚合统计
+        struct RangeStats {
+            qint64 totalChars = 0;
+            int totalCommits = 0;
+            int cnt1 = 0, cnt2 = 0, cnt3 = 0, cnt4 = 0, cnt5plus = 0;
+        };
+        RangeStats rangeStats(const QString& from, const QString& to) const;
 
         /// 获取数据库存储（仅供设置面板使用）
         DatabaseStorage* getDatabase() const { return m_db; }
@@ -81,6 +94,18 @@ namespace wordcount {
 
         bool m_countPunctuation = false;
         bool m_countEmoji = false;
+
+        void updateSpeedStats(qint64 chars, qint64 now);
+        struct SpeedSample {
+            qint64 ts;
+            qint64 chars;
+        };
+        QVector<SpeedSample> m_speedSamples;
+        double m_avgSpeed = 0.0;
+        int m_peakSpeed = 0;
+        qint64 m_todayFirstCommitTime = 0;   // 今日第一次提交时间
+        qint64 m_todayLastCommitTime = 0;    // 今日最后一次提交时间
+        double m_todayTotalTimeMinutes = 0;  // 今日总输入时间（分钟）
     };
 
 } // namespace wordcount
