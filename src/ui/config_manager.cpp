@@ -168,7 +168,8 @@ void ConfigManager::setAutoStart(bool enabled)
         QString content = "[Desktop Entry]\n"
         "Type=Application\n"
         "Name=Fcitx5 Word Count\n"
-        "Exec=" + QCoreApplication::applicationFilePath() + "\n"
+        "Exec=fcitx5_wordcount\n"
+        "Icon=fcitx5wordcount\n"
         "Hidden=false\n"
         "NoDisplay=false\n"
         "X-GNOME-Autostart-enabled=true\n";

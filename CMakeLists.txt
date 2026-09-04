@@ -7,7 +7,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets DBus Sql)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets DBus Sql Gui Svg)
 
 set(SOURCES
     src/main.cpp
@@ -43,7 +43,15 @@ set(HEADERS
     src/ui/insight_panel.h
 )
 
-add_executable(fcitx5_wordcount ${SOURCES} ${HEADERS})
+set(RESOURCES resources/resources.qrc)
+
+qt6_add_resources(RESOURCES_RCC ${RESOURCES})
+
+add_executable(fcitx5_wordcount
+    ${SOURCES}
+    ${HEADERS}
+    ${RESOURCES_RCC}
+)
 
 target_include_directories(fcitx5_wordcount PRIVATE src)
 
@@ -52,7 +60,54 @@ target_link_libraries(fcitx5_wordcount
     Qt6::Widgets
     Qt6::DBus
     Qt6::Sql
+    Qt6::Gui
+    Qt6::Svg
 )
 
 # 安装到系统
-install(TARGETS fcitx5_wordcount RUNTIME DESTINATION bin)
+install(TARGETS fcitx5_wordcount
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# 安装图标
+install(FILES
+    resources/icons/app-icon.svg
+    DESTINATION /usr/local/share/icons/scalable/apps
+    RENAME fcitx5wordcount.svg
+)
+
+install(FILES
+    resources/icons/app-icon-16.png
+    DESTINATION /usr/local/share/icons/hicolor/16x16/apps
+    RENAME fcitx5wordcount.png
+)
+
+install(FILES
+    resources/icons/app-icon-32.png
+    DESTINATION /usr/local/share/icons/hicolor/32x32/apps
+    RENAME fcitx5wordcount.png
+)
+
+install(FILES
+    resources/icons/app-icon-64.png
+    DESTINATION /usr/local/share/icons/hicolor/64x64/apps
+    RENAME fcitx5wordcount.png
+)
+
+install(FILES
+    resources/icons/app-icon-128.png
+    DESTINATION /usr/local/share/icons/hicolor/128x128/apps
+    RENAME fcitx5wordcount.png
+)
+
+install(FILES
+    resources/icons/app-icon-256.png
+    DESTINATION /usr/local/share/icons/hicolor/256x256/apps
+    RENAME fcitx5wordcount.png
+)
+
+# 安装桌面文件
+install(FILES
+    resources/fcitx5wordcount.desktop
+    DESTINATION /usr/local/share/applications
+)

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Fcitx5 Word Count
+Name[zh_CN]=打字统计
+Comment=Word count for Fcitx5 input method
+Comment[zh_CN]=Fcitx5 输入法打字统计
+Exec=fcitx5_wordcount
+Icon=fcitx5wordcount
+Terminal=false
+Categories=Utility;
+StartupNotify=true
+X-GNOME-Autostart-enabled=true

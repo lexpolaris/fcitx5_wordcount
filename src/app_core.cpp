@@ -176,10 +176,13 @@ void AppCore::onSettingsRequested()
 
 void AppCore::onAboutRequested()
 {
-    QMessageBox::about(nullptr, tr("关于打字统计"),
-                       tr("<b>打字统计 v2.0</b><br>"
-                       "统计 Fcitx 5 输入法输入的汉字字数，采用了段位系统。<br>"
-                       "基于Qt，完全本地运行。"));
+    QMessageBox aboutBox;
+    aboutBox.setWindowTitle(tr("关于打字统计"));
+    aboutBox.setIconPixmap(QIcon(":/app-icon.svg").pixmap(64, 64));
+    aboutBox.setText(tr("<b>打字统计 v2.0</b><br>"
+                        "统计 Fcitx 5 输入法输入的汉字字数，采用了段位系统。<br>"
+                        "基于Qt，完全本地运行。"));
+    aboutBox.exec();
 }
 
 void AppCore::shutdown()

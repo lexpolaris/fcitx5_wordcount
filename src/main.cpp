@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QIcon>
 #include <QTimer>
 #include <csignal>
 #include "app_core.h"
@@ -9,6 +10,8 @@ int main(int argc, char *argv[])
     app.setApplicationName("Fcitx5WordCount");
     app.setOrganizationName("Fcitx5WordCount");
     app.setQuitOnLastWindowClosed(false);
+
+    app.setWindowIcon(QIcon(":/app-icon.svg"));
 
     // 处理信号，确保正常退出
     signal(SIGINT, [](int) { QApplication::quit(); });

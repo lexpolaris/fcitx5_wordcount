@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- 背景圆 -->
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4A7D9D;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2E86AB;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F1C40F;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E67E22;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- 圆形背景 -->
+  <circle cx="64" cy="64" r="60" fill="url(#bg)"/>
+  
+  <!-- 文字 "文" -->
+  <text x="64" y="78" font-family="'Source Han Serif SC', serif" 
+        font-size="52" font-weight="bold" fill="white" text-anchor="middle">文</text>
+  
+  <!-- 下方装饰线 -->
+  <line x1="36" y1="90" x2="92" y2="90" stroke="rgba(255,255,255,0.3)" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- 底部小折线图-->
+  <polyline points="30,110 44,98 58,105 72,92 86,100 100,86" 
+            stroke="url(#accent)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- 数据点 -->
+  <circle cx="30" cy="110" r="2.5" fill="#F1C40F"/>
+  <circle cx="44" cy="98" r="2.5" fill="#F1C40F"/>
+  <circle cx="58" cy="105" r="2.5" fill="#F1C40F"/>
+  <circle cx="72" cy="92" r="2.5" fill="#F1C40F"/>
+  <circle cx="86" cy="100" r="2.5" fill="#F1C40F"/>
+  <circle cx="100" cy="86" r="3.5" fill="#F1C40F"/>
+</svg>
